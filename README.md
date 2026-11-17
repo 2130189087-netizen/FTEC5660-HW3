@@ -203,6 +203,7 @@ PASS rule: PASS when the employee gives a generally positive assessment of worki
 ### Design
 The program creates one DeepSeek agent for each company. Each agent receives four tools: list_documents, read_document, sql_query, and interview.
 For points 1 and 5, the agent uses SQL to calculate the financial values. For point 7, it uses an employee interview. The agent then returns a JSON answer containing the three PASS/FAIL decisions and a short summary. The final results are written to results.csv.
+
 ```mermaid
 flowchart LR
     A[Company folder] --> B[Company tools]
