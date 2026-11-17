@@ -171,13 +171,50 @@ companies with the same tools and the same answer key rules, but different
 names and wording, and scores your 3 points only.
 
 ## Homework 3 solution:
-> to students: this is your report, see the homework description.
-
+This project implements a LangChain agent based on Fisher's investment-analysis framework. The agent evaluates Fisher points 1, 5, and 7 for each company.
 ### My 3 points and rules
-> for each point: why you chose it, your PASS rule in one or two sentences, and the evidence it uses. Quote Fisher where it helps.
+### Point 1: Market potential for sales growth
+
+I chose this point because sales growth is an important and measurable sign of business potential.
+
+The agent uses the `sql_query` tool to calculate the company's revenue growth from 2023 to 2025 using the `orders` table. It then compares the result with the company's industry median in the `industry_medians` table.
+
+**PASS rule:** PASS if the company's revenue growth is at least the industry median. Otherwise, the result is FAIL.
+
+### Point 5: Worthwhile profit margin
+
+I chose this point because profit margin shows whether the company can turn sales into operating profit.
+
+The agent uses the `orders` and `monthly_costs` tables to calculate the FY2025 operating margin.
+
+The calculation is:
+
+```text
+(revenue - cost_of_sales - selling_admin - research_development) / revenue
+
+PASS rule: PASS if the company's FY2025 operating margin is at least the industry median operating margin. Otherwise, the result is FAIL.
+
+### Point 7: Labour and personnel relations
+I chose this point because employee information is different from financial information.
+The agent uses the interview tool with the role current_employee and the topic working_conditions. If the current employee cannot comment, it may ask a former_employee.
+
+PASS rule: PASS when the employee gives a generally positive assessment of working conditions and personnel relations. FAIL when the interview reports serious dissatisfaction, unsafe conditions, high turnover, unfair treatment, or labour conflict.
 
 ### Design
-> a visualization of your agent design and one paragraph describing it.
+The program creates one DeepSeek agent for each company. Each agent receives four tools: list_documents, read_document, sql_query, and interview.
+For points 1 and 5, the agent uses SQL to calculate the financial values. For point 7, it uses an employee interview. The agent then returns a JSON answer containing the three PASS/FAIL decisions and a short summary. The final results are written to results.csv.
+```mermaid
+flowchart LR
+    A[Company folder] --> B[Company tools]
+    B --> C[DeepSeek agent]
+    C --> D[SQL for points 1 and 5]
+    C --> E[Interview for point 7]
+    D --> F[PASS/FAIL JSON]
+    E --> F
+    F --> G[results.csv]
+```
 
 ### Results
-> your point score on `public_test`, the companies where your verdicts disagree with the public answers, and why.
+Point accuracy: 60/60
+Balanced accuracy: 100.0%
+
