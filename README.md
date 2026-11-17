@@ -221,4 +221,5 @@ flowchart LR
 ### Results
 Point accuracy: 60/60
 Balanced accuracy: 100.0%
-
+There were no disagreements with the public answers.
+The agent used SQL for points 1 and 5. It used employee interviews for point 7. The rules were applied in the same way to every company.
