@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import argparse
 import asyncio
 import csv
@@ -57,60 +59,146 @@ def load_env_file(path: Path = Path(".env")) -> None:
 
 # Choose any 3 of the 15 points, e.g. CHOSEN_POINTS = [1, 7, 15]. Your agent
 # gives a PASS or FAIL verdict on these 3 points only, with your own rule for each.
-CHOSEN_POINTS: list[int] = []  ### YOUR CODE HERE
+CHOSEN_POINTS: list[int] = [1, 5, 7]
 
 
 def build_agent() -> Any:
-    """Create and return your model or agent once.
+    """Create the DeepSeek chat model used by the company agents."""
+    load_env_file()
+    from langchain_deepseek import ChatDeepSeek
 
-    Suggested imports:
-        from langchain_deepseek import ChatDeepSeek
-        from langchain.agents import create_agent
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "DEEPSEEK_API_KEY was not found. Put it in the .env file in the "
+            "same folder as hw3.py."
+        )
 
-    Use the DeepSeek model named by ``MODEL_NAME``. The API key is loaded
-    from .env. Each company has its own tools (see ``analyze_companies``), so
-    you will probably create one tool-calling agent per company there.
-    """
-    ### YOUR CODE HERE
-    return None
+    return ChatDeepSeek(
+        model=MODEL_NAME,
+        api_key=api_key,
+        temperature=0,
+    )
+
+
+SYSTEM_PROMPT = """
+You are an investment-analysis agent
+Evaluate exactly Fisher points 1, 5, and 7 for the current company.
+
+Use only the tools provided for this company. Do not use web search, outside
+information, or direct access to company.db or interviews.dat.
+
+Point 1: calculate 2023-to-2025 revenue growth from the orders table and
+compare it with industry_medians.revenue_growth_2y_pct. PASS when company
+growth is at least the industry median.
+
+Point 5: calculate FY2025 operating margin as
+(revenue - cost_of_sales - selling_admin - research_development) / revenue
+using orders and monthly_costs, and compare it with
+industry_medians.operating_margin_pct. PASS when the company margin is at
+least the industry median.
+
+Point 7: call interview(role="current_employee", topic="working_conditions").
+If that person cannot comment, call interview(role="former_employee",
+topic="working_conditions"). PASS when an informed employee gives a
+generally positive assessment of working conditions and personnel relations;
+FAIL for serious dissatisfaction, unfair treatment, unsafe conditions, high
+turnover, labour conflict, or similar problems.
+
+Use SQL for the numerical calculations. Return only valid JSON in this form:
+{"points":{"1":"PASS","5":"FAIL","7":"PASS"},"summary":"Brief evidence-based summary."}
+"""
+
+
+def _content_text(content: Any) -> str:
+    """Convert a LangChain message content value to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                value = item.get("text") or item.get("content")
+                if value:
+                    parts.append(str(value))
+            elif item:
+                parts.append(str(item))
+        return "".join(parts)
+    return str(content or "")
+
+
+def _last_agent_text(response: Any) -> str:
+    """Get the final text from create_agent's result."""
+    if isinstance(response, dict):
+        messages = response.get("messages", [])
+        for message in reversed(messages):
+            content = getattr(message, "content", None)
+            if content is None and isinstance(message, dict):
+                content = message.get("content")
+            text = _content_text(content)
+            if text.strip():
+                return text.strip()
+        for key in ("output", "content"):
+            if key in response and _content_text(response[key]).strip():
+                return _content_text(response[key]).strip()
+    return _content_text(response).strip()
+
+
+def _parse_agent_json(raw: str) -> dict[str, Any]:
+    """Parse the JSON object returned by the model and validate its points."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+    left, right = text.find("{"), text.rfind("}")
+    if left < 0 or right <= left:
+        raise ValueError(f"Agent did not return a JSON object: {raw[:200]!r}")
+    data = json.loads(text[left:right + 1])
+    if not isinstance(data, dict) or not isinstance(data.get("points"), dict):
+        raise ValueError("Agent JSON must contain a points object")
+
+    points: dict[int, str] = {}
+    for key, value in data["points"].items():
+        point = int(key)
+        if isinstance(value, bool):
+            verdict = "PASS" if value else "FAIL"
+        else:
+            verdict = str(value).strip().upper()
+        if point in CHOSEN_POINTS and verdict in VERDICTS:
+            points[point] = verdict
+    missing = [point for point in CHOSEN_POINTS if point not in points]
+    if missing:
+        raise ValueError(f"Agent omitted point(s): {missing}")
+    return {"points": points, "summary": str(data.get("summary", "")).strip()}
 
 
 async def analyze_companies(agent: Any, companies: dict[str, list[Any]]) -> dict[str, dict[str, Any]]:
-    """Run your agent and return its verdicts on CHOSEN_POINTS for every company.
+    """Run one tool-calling agent per company and keep failures local."""
+    from langchain.agents import create_agent
 
-    ``companies`` maps each company folder name to its four LangChain tools:
-
-        list_documents()             names and dates of the company's documents
-        read_document(name)          the text of one document
-        sql_query(query)             one read-only SQLite query on company.db
-        interview(role, topic)       one interview answer (INTERVIEW_LIMIT per company)
-
-    Give the tools to a tool-calling agent, e.g.
-    ``create_agent(model, tools=companies[name], system_prompt=...)``, or call
-    them yourself with ``tool.invoke({...})``. The README explains the
-    documents, the database tables and the interview roles and topics.
-
-    Return one dictionary per company folder name, e.g. with
-    CHOSEN_POINTS = [1, 7, 15]:
-
-        {
-            "hollins_group": {
-                "points": {1: "PASS", 7: "FAIL", 15: "PASS"},
-                "summary": "Two or three sentences explaining the verdicts.",
-            },
-            ...
-        }
-
-    Each chosen point needs a verdict ("PASS" or "FAIL"; True/False also
-    works). Other points are ignored.
-
-    Catch errors per company (e.g. a failed API call) and still return an
-    entry for it: an exception here means no results.csv, which scores zero.
-    You may analyse companies in parallel (e.g. ``asyncio.gather``).
-    """
-    ### YOUR CODE HERE
-    _ = agent
-    return {name: {"points": {}, "summary": ""} for name in companies}
+    analyses: dict[str, dict[str, Any]] = {}
+    for company_name, company_tools in companies.items():
+        try:
+            company_agent = create_agent(
+                model=agent,
+                tools=company_tools,
+                system_prompt=SYSTEM_PROMPT,
+            )
+            response = await company_agent.ainvoke({
+                "messages": [{
+                    "role": "user",
+                    "content": (
+                        f"Analyze company {company_name}. Use the available tools, "
+                        "apply the three rules exactly, and return the required JSON."
+                    ),
+                }]
+            })
+            analyses[company_name] = _parse_agent_json(_last_agent_text(response))
+        except Exception as exc:
+            analyses[company_name] = {
+                "points": {point: "FAIL" for point in CHOSEN_POINTS},
+                "summary": f"Agent failed for this company: {type(exc).__name__}: {exc}",
+            }
+    return analyses
 
 
 # Everything below is provided runner/scoring code. No edits are needed.
