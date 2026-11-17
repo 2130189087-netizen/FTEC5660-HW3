@@ -191,14 +191,17 @@ The calculation is:
 
 ```text
 (revenue - cost_of_sales - selling_admin - research_development) / revenue
+```
 
-PASS rule: PASS if the company's FY2025 operating margin is at least the industry median operating margin. Otherwise, the result is FAIL.
+**PASS rule:** PASS if the company's FY2025 operating margin is at least the industry median operating margin. Otherwise, the result is FAIL.
 
 ### Point 7: Labour and personnel relations
-I chose this point because employee information is different from financial information.
-The agent uses the interview tool with the role current_employee and the topic working_conditions. If the current employee cannot comment, it may ask a former_employee.
 
-PASS rule: PASS when the employee gives a generally positive assessment of working conditions and personnel relations. FAIL when the interview reports serious dissatisfaction, unsafe conditions, high turnover, unfair treatment, or labour conflict.
+I chose this point because employee information is different from financial information.
+
+The agent uses the `interview` tool with the role `current_employee` and the topic `working_conditions`. If the current employee cannot comment, it may ask a `former_employee`.
+
+**PASS rule:** PASS when the employee gives a generally positive assessment of working conditions and personnel relations. FAIL when the interview reports serious dissatisfaction, unsafe conditions, high turnover, unfair treatment, or labour conflict.
 
 ### Design
 The program creates one DeepSeek agent for each company. Each agent receives four tools: list_documents, read_document, sql_query, and interview.
